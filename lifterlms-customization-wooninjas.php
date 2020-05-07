@@ -79,6 +79,7 @@ class LifterLMS_Woo_Customization {
 
 	public function hooks()
 	{
+
 		add_action( "init", array( $this, "testing" ));
 		add_action( 'init', array( $this, 'init' ), 9999 );
 		add_filter( "cron_schedules", [ "LifterLMS_Woo_Customization", "custom_cron_schedule" ] );
@@ -88,6 +89,8 @@ class LifterLMS_Woo_Customization {
 
 		// resubscribe membership based on email link which was sent to customer
 		add_action( "init", array( $this, "resubscribe_membership" ) );
+
+		add_filter( "llms_is_user_enrolled", array( $this, 'filter_user_new_order' ), 99, 5 );
 	}
 
 	/**
@@ -97,7 +100,6 @@ class LifterLMS_Woo_Customization {
 	 * @version  1.0.0
 	 */
 	public function init() {
-
 		
 	}
 
@@ -172,6 +174,7 @@ class LifterLMS_Woo_Customization {
 		$email_content 			= get_option("lifterlms_woo_discount_email_content");
 		$email_subject 			= get_option("lifterlms_woo_discount_email_subject");
 		$email_heading 			= get_option("lifterlms_woo_discount_email_heading");
+
 		$orders 				= $this->get_near_expiring_orders();
 
 		if( empty($orders) ) {
@@ -230,6 +233,7 @@ class LifterLMS_Woo_Customization {
 			$mailer->set_heading( $email_heading );
 			$mailer->set_subject( $email_subject );
 			$mailer->set_body( $email_content );
+			
 			if($mailer->send() ) {
 				update_post_meta($order_id, "_llms_discount_email_sent", "yes", "");
 				llms_log( sprintf( __('LLMS - Wooninjas - Discount mail sent to user email: %s, Order ID: %d', 'lifterlms'), $user->user_email, $order_id) );
@@ -262,11 +266,11 @@ class LifterLMS_Woo_Customization {
 					'type'		=> 'DATETIME',
 					'compare'	=> 'BETWEEN'
 				),
-				array(
+				/*array(
 					'key'		=> 	'_llms_payment_gateway',
 					'value'		=>	'manual',
 					'compare'	=>	'!='
-				),
+				),*/
 				array(
 					'key'		=>	'_llms_discount_email_sent',
 					'compare'	=>	'NOT EXISTS'
@@ -335,6 +339,8 @@ class LifterLMS_Woo_Customization {
     		return;
     	}
 
+
+
     	extract($user_data);
 
 		//$date_format    			= 	get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
@@ -344,18 +350,30 @@ class LifterLMS_Woo_Customization {
     	$user_id 					=	$order->get( 'user_id' );
 		$user 						= 	get_user_by( "ID", $user_id );
 
-    	/*if( !empty($order_resubscribed) && $order_resubscribed == "yes" ) {
-    		llms_log( __( 'LLMS WooNinjas - User has already resubscribed. Order ID: '.$order_id.', User ID: '. $user_id, 'lifterlms' ) );
-    		return;
-    	}*/
-    	//dd($order_resubscribed);
+		$this->woo_user_auto_login( $user_id, $user );
+
+		$plan_id 					= 	$order->get('plan_id');
+		$plan 						= 	new LLMS_Access_Plan( $plan_id );
+		$plan_checkout_url 			= 	$plan->get_checkout_url( false );
 		$updated_billing_unit 		=	get_option("lifterlms_woo_membership_duration_unit", 12);
 		$updated_billing_frequency 	=	get_option("lifterlms_woo_membership_duration_frequency", "month");
 		$nice_updated_billing 		= 	$updated_billing_unit . " " . $updated_billing_frequency;
 		$nice_updated_date 			= 	date_i18n( "Y-m-d H:i:s", strtotime($nice_updated_billing) );
 		$updated_billing_price 		=	get_option("lifterlms_woo_membership_recurring_discount_price", 79);
 		$existing_expiry_date 		= 	$order->get_access_expiration_date();
-		$order_type 				= 	get_post_meta( $order_id, "_llms_order_type", true );
+		$order_type 				= 	$order->get('order_type');
+		$payment_gateway  			= 	$order->get("payment_gateway");
+
+		if( $payment_gateway == "manual" ) {
+			wp_safe_redirect( add_query_arg( "woo_status", "order_resubscribe", $plan_checkout_url ) );
+			exit;
+		}
+
+    	/*if( !empty($order_resubscribed) && $order_resubscribed == "yes" ) {
+    		llms_log( __( 'LLMS WooNinjas - User has already resubscribed. Order ID: '.$order_id.', User ID: '. $user_id, 'lifterlms' ) );
+    		return;
+    	}*/
+    	//dd($order_resubscribed);
 		$order_charged 				= 	false;
 		
 		// @todo
@@ -366,8 +384,6 @@ class LifterLMS_Woo_Customization {
 		$elapsed = $interval->format("%f");
 		dd($elapsed);
 		*/
-		
-		$this->woo_user_auto_login( $user_id, $user );
 		
 		// return if user is still logged in
 		if( !is_user_logged_in() ) {
@@ -527,25 +543,25 @@ class LifterLMS_Woo_Customization {
 	}
 
 	public function addEmailHtmlCss() {
-?>
-td.main-content a[href*="woo_key"] {
-	/* These are technically the same, but use both */
-	overflow-wrap: break-word;
-	word-wrap: break-word;
+	?>
+	td.main-content a[href*="woo_key"] {
+		/* These are technically the same, but use both */
+		overflow-wrap: break-word;
+		word-wrap: break-word;
 
-	-ms-word-break: break-all;
-	/* This is the dangerous one in WebKit, as it breaks things wherever */
-	word-break: break-all;
-	/* Instead use this non-standard one: */
-	word-break: break-word;
+		-ms-word-break: break-all;
+		/* This is the dangerous one in WebKit, as it breaks things wherever */
+		word-break: break-all;
+		/* Instead use this non-standard one: */
+		word-break: break-word;
 
-	/* Adds a hyphen where the word breaks, if supported (No Blink) */
-	-ms-hyphens: auto;
-	-moz-hyphens: auto;
-	-webkit-hyphens: auto;
-	hyphens: auto;
-}
-<?php
+		/* Adds a hyphen where the word breaks, if supported (No Blink) */
+		-ms-hyphens: auto;
+		-moz-hyphens: auto;
+		-webkit-hyphens: auto;
+		hyphens: auto;
+	}
+	<?php
 	}
 
 
@@ -600,6 +616,14 @@ td.main-content a[href*="woo_key"] {
 		}
 
 	}
+
+
+	public function filter_user_new_order( $ret, $student, $product_ids, $relation, $use_cache ) {
+		if( isset($_GET["woo_status"]) && $_GET["woo_status"] == "order_resubscribe" ) {
+			$ret = false;
+		}
+		return $ret;
+	}
 }
 
 endif;
@@ -624,21 +648,93 @@ add_action( 'plugins_loaded', 'LifterLMS_Woo_Init', 9999 );
 
 add_filter( "llms_get_gateway_invoice_prefix", function( $invoice_prefix ){
 	return $invoice_prefix . time() . ' - ';
-}, 999);
+}, 1000);
 
-add_filter( "llms_plan_get_price", function( $ret, $key, $price_args, $format, $plan_model ){
+function is_llms_woo_checkout() {
+	if( isset($_GET["woo_status"]) && !empty($_GET["woo_status"]) && $_GET["woo_status"] == "order_resubscribe" ) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+add_filter( "llms_plan_get_price", "llms_plan_get_price", 9999, 5 );
+add_filter( "llms_get_access_plan_price_price", "llms_plan_get_price", 9999, 5 );
+add_filter( "llms_get_order_total_price", "llms_plan_get_price", 9999, 5 );
+function llms_plan_get_price( $ret, $key, $price_args, $format, $model ){
 
 	if( isset($_GET["order"]) && !empty($_GET["order"]) && llms_get_order_by_key( $_GET["order"] ) ) {
-		$discount_price = get_option("lifterlms_woo_membership_recurring_discount_price", 79);
-		$price = llms_price( $discount_price, $price_args );
-		return $price;
+		
+		$ret = get_option("lifterlms_woo_membership_recurring_discount_price", 79);
+
+		if ( 'html' == $format || 'raw' === $format ) {
+			$ret = llms_price( $ret, $price_args );
+			if ( 'raw' === $format ) {
+				$ret = strip_tags( $ret );
+			}
+		} elseif ( 'float' === $format ) {
+			$ret = floatval( number_format( $ret, get_lifterlms_decimals(), '.', '' ) );
+		} else {
+			$ret = $ret;
+		}
+	}
+
+	if( is_llms_woo_checkout() ) {
+		$ret = get_option("lifterlms_woo_membership_recurring_discount_price", 79);
+		
+		if ( 'html' == $format || 'raw' === $format ) {
+			$ret = llms_price( $ret, $price_args );
+			if ( 'raw' === $format ) {
+				$ret = strip_tags( $ret );
+			}
+		} elseif ( 'float' === $format ) {
+			$ret = floatval( number_format( $ret, get_lifterlms_decimals(), '.', '' ) );
+		} else {
+			$ret = $ret;
+		}
 	}
 
 	return $ret;
 
-}, 9999, 5 );
+};
 
-add_filter( "llms_get_product_expiration_details", function( $ret, $plan_model ){
+add_filter( "llms_get_access_plan_access_period", function( $value, $model ){
+	if( is_llms_woo_checkout() ) {
+		$value = get_option( 'lifterlms_woo_membership_duration_frequency', 'month' );
+	}
+	return $value;
+}, 9999, 2);
+
+add_filter( "llms_get_access_plan_access_frequency", function( $value, $model ){
+	if( is_llms_woo_checkout() ) {
+		return 0;
+	}
+	return $value;
+}, 9999, 2);
+
+add_filter( "llms_get_access_plan_access_length", function( $value, $model ){
+	if( is_llms_woo_checkout() ) {
+		$value = get_option( 'lifterlms_woo_membership_duration_unit', 12 );
+	}
+	return $value;
+}, 9999, 2);
+
+add_filter( "llms_get_access_plan_access_expiration", function( $value, $model ){
+	if( is_llms_woo_checkout() ) {
+		return 'limited-period';
+	}
+	return $value;
+}, 9999, 2);
+
+add_filter( "llms_get_access_plan_access_unit", function( $value, $model ){
+	if( is_llms_woo_checkout() ) {
+		$value = get_option( 'lifterlms_woo_membership_duration_unit', 12 );
+	}
+	return $value;
+}, 9999, 2);
+
+add_filter( "llms_get_product_expiration_details", 'woo_llms_filter_expiration_details', 9999, 2);
+function woo_llms_filter_expiration_details( $ret, $plan_model ){
 
 	$expiration = $plan_model->get( 'access_expiration' );
 	
@@ -648,13 +744,22 @@ add_filter( "llms_get_product_expiration_details", function( $ret, $plan_model )
 		$nice_billing 		= 	$billing_unit . " " . $billing_frequency;
 
 		$ret = sprintf( _x( '%1$s of access', 'Access period description', 'lifterlms' ), $nice_billing );
+	}
 
-		return $ret;
+
+	if( is_llms_woo_checkout() && $expiration == "limited-period" ) {		
+
+		$billing_unit 		=	get_option("lifterlms_woo_membership_duration_unit", 12);
+		$billing_frequency 	=	get_option("lifterlms_woo_membership_duration_frequency", "month");
+		$nice_billing 		= 	$billing_unit . " " . $billing_frequency;
+
+
+		$ret = sprintf( _x( '%1$s of access', 'Access period description', 'lifterlms' ), $nice_billing );
 	}
 
 	return $ret;
 
-}, 9999, 2 );
+};
 
 add_action( "llms_dispatch_notification_processors", "llms_woo_fix_access_date_issue" );
 function llms_woo_fix_access_date_issue() {
@@ -679,23 +784,27 @@ function llms_woo_fix_access_date_issue() {
 		return llms_add_notice( __( 'Could not locate an order to confirm.', 'lifterlms' ), 'error' );
 	}
 
+	$updated_billing_unit 		=	get_option("lifterlms_woo_membership_duration_unit", 12);
+	$updated_billing_frequency 	=	get_option("lifterlms_woo_membership_duration_frequency", "month");
+	$nice_updated_billing 		= 	$updated_billing_unit . " " . $updated_billing_frequency;
+	$nice_updated_date 			= 	date_i18n( "Y-m-d H:i:s", strtotime($nice_updated_billing) );
+
+	// set order/membership expiry date
+	$order->set( 'access_expiration', 'limited-period' );
+
+	$order->set_date( "access_expires", $nice_updated_date );
+	$order->set( 'date_access_expires', $nice_updated_date );
+
+	if( $order_type == "recurring" ) {
+		$order->set_date( 'next_payment', $nice_updated_date );
+		$order->maybe_schedule_payment( true );
+	}
+
 	if( $order->get( 'payment_gateway' ) != "manual" ) {
 
-		$updated_billing_unit 		=	get_option("lifterlms_woo_membership_duration_unit", 12);
-		$updated_billing_frequency 	=	get_option("lifterlms_woo_membership_duration_frequency", "month");
-		$nice_updated_billing 		= 	$updated_billing_unit . " " . $updated_billing_frequency;
-		$nice_updated_date 			= 	date_i18n( "Y-m-d H:i:s", strtotime($nice_updated_billing) );
-
-		// set order/membership expiry date
-		$order->set_date( "access_expires", $nice_updated_date );
-		$order->set( 'date_access_expires', $nice_updated_date );
-
-		if( $order_type == "recurring" ) {
-			$order->set_date( 'next_payment', $nice_updated_date );
-			$order->maybe_schedule_payment( true );
-		}
 
 	}
+
 }
 
 function llms_woo_activation() {
