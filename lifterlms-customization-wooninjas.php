@@ -108,44 +108,7 @@ class LifterLMS_Woo_Customization {
 			return;
 		}
 
-		$email_content 			= get_option("lifterlms_woo_discount_email_content");
-		$email_subject 			= get_option("lifterlms_woo_discount_email_subject");
-		$email_heading 			= get_option("lifterlms_woo_discount_email_heading");
 		$orders 				= $this->get_near_expiring_orders();
-
-
-		/*$mailer = LLMS()->mailer()->get_email( 'llms_woo_discount_email' );
-		$mailer->add_recipient( 223 );
-
-		$mailer->set_heading( esc_html__( $email_subject, 'lifterlms' ) );
-		$mailer->set_subject( esc_html__( $email_heading, 'lifterlms' ) );
-		$mailer->add_merge_data(
-			array(
-				"%email_discount_link%" 	=>	__('TESTING SUCCESS'),
-				"%blogname%"				=>	get_bloginfo('name')
-			)
-		);
-		$mailer->set_body( __( 'Please find %email_discount_link% the attached CSV file.', 'lifterlms' ) );
-
-		$mailer->send();*/
-
-		/*$order_c = new LLMS_Controller_Orders();
-		$order 			= 	new LLMS_Order( 4005 );
-		$order->set("total", 500);
-		$order->set("original_total", 500);
-		$order->set("billing_frequency", 25);
-		$order->set("billing_period", "day");
-
-		add_filter( "llms_get_order_total_price", "llms_plan_get_price_custom", 999, 5 );
-		$charged = $order_c->recurring_charge( 4005 );
-		dd(var_export($charged, true), false);
-		
-		$order->set_date( "access_expires", strtotime( '15 months' , current_time('timestamp') ) );*/
-		/*$order->set_date( 'next_payment', strtotime( '24 months' , current_time('timestamp') ) );*/
-		/*$order->set_status("active");
-		remove_filter( "llms_get_order_total_price", "llms_plan_get_price_custom", 999, 5 );
-
-		llms_enroll_student( $order->get( 'user_id' ), $order->get( 'product_id' ), 'order_' . $order->get( 'id' ) );*/
 		
 		dd($orders);
 		
@@ -373,7 +336,12 @@ class LifterLMS_Woo_Customization {
 		$order_type 				= 	$order->get('order_type');
 		$payment_gateway  			= 	$order->get("payment_gateway");
 
-		$date_difference 			= 	date_diff( date_create(date_i18n( 'Y-m-d' )), date_create($existing_expiry_date) )->format("%a"); // calculating different btw dates
+		if( !empty($existing_expiry_date) && ( $existing_expiry_date != "To be Determined" || $existing_expiry_date != "Lifetime Access" ) ) {
+			// calculating different btw dates
+			$date_difference 		= date_diff( date_create(date_i18n( 'Y-m-d' )), date_create($existing_expiry_date) )->format("%a");
+		} else {
+			$date_difference 		= 2;
+		}
 
     	if( !empty($order_resubscribed) && $order_resubscribed == "yes" ) {
     		llms_log( __( 'LLMS WooNinjas - User has already resubscribed. Order ID: '.$order_id.', User ID: '. $user_id, 'lifterlms' ) );
@@ -397,15 +365,6 @@ class LifterLMS_Woo_Customization {
 		}
     	//dd($order_resubscribed);
 		$order_charged 				= 	false;
-		
-		// @todo
-		/*$datetime1 = new DateTime( $existing_expiry_date );
-		$datetime2 = new DateTime( date_i18n( "Y-m-d", time() ) );
-		$interval = $datetime1->diff($datetime2);
-		$elapsed = $interval->format('%y years %m months %a days %h hours %i minutes %s seconds');
-		$elapsed = $interval->format("%f");
-		dd($elapsed);
-		*/
 		
 		// return if user is still logged in
 		if( !is_user_logged_in() ) {
